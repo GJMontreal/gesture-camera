@@ -14,9 +14,8 @@ public struct WASDOverlayView: View {
 
     public var body: some View {
         VStack {
-            HStack(spacing: 8) {
+            HStack {
                 Spacer()
-                invertToggle
                 motionToggle
             }
             .padding([.top, .trailing], 20)
@@ -79,23 +78,6 @@ public struct WASDOverlayView: View {
                     .onChanged { _ in controller.setMoving(direction, active: true) }
                     .onEnded   { _ in controller.setMoving(direction, active: false) }
             )
-    }
-
-    // MARK: - Invert touch toggle
-
-    private var invertToggle: some View {
-        Button { controller.invertTouchGestures.toggle() } label: {
-            Image(systemName: "arrow.up.left.and.arrow.down.right")
-                .font(.system(size: 22, weight: .medium))
-                .frame(width: keySize, height: keySize)
-                .background(controller.invertTouchGestures ? Color.orange.opacity(0.75) : Color.black.opacity(0.55))
-                .foregroundStyle(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(controller.invertTouchGestures ? Color.orange : Color.clear, lineWidth: 2)
-                )
-        }
     }
 
     // MARK: - Motion toggle (top-right)

@@ -134,14 +134,14 @@ public final class MotionCameraDriver {
         let now   = motion.timestamp
 
         detectImpulse(
-            value:     -accel.z,
+            value:     accel.z,
             isAbove:   &forwardAbove,
             readyAt:   &forwardReadyAt,
             now:       now,
             onImpulse: { [weak self] delta in self?.onTranslationImpulse?(delta, 0) }
         )
         detectImpulse(
-            value:     lateralAcceleration(accel),
+            value:     -lateralAcceleration(accel),
             isAbove:   &lateralAbove,
             readyAt:   &lateralReadyAt,
             now:       now,

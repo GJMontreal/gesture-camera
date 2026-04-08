@@ -23,7 +23,17 @@ public final class GestureCameraController: ObservableObject {
     public var attitudeSmoothingTime: Float = 0.04
 
     /// Inverts both yaw and pitch axes for touch rotation gestures.
-    @Published public var invertTouchGestures: Bool = false
+    @Published public var invertTouchGestures: Bool = true
+
+    /// Acceleration magnitude required to trigger a translation impulse.
+    /// Lower = more sensitive. Range 0.1 … 1.0. Default 0.4.
+    public var impulseThreshold: Double {
+        get { motionDriver.impulseThreshold }
+        set { motionDriver.impulseThreshold = newValue }
+    }
+
+    /// Fired when an impulse is detected. Clears automatically after 0.3 s.
+    @Published public private(set) var lastImpulse: ImpulseEvent?
 
     // MARK: - Private state
 
@@ -194,10 +204,34 @@ public final class GestureCameraController: ObservableObject {
     private func applyTranslationImpulse(forwardDelta: Int, lateralDelta: Int) {
         if forwardDelta != 0 {
             motionForwardAxis = (motionForwardAxis + forwardDelta).clamped(to: -1...1)
+            let axis: ImpulseEvent.Axis = forwardDelta > 0 ? .forward : .backward
+            publishImpulse(ImpulseEvent(axis: axis))
         }
         if lateralDelta != 0 {
             motionLateralAxis = (motionLateralAxis + lateralDelta).clamped(to: -1...1)
+            let axis: ImpulseEvent.Axis = lateralDelta > 0 ? .right : .left
+            publishImpulse(ImpulseEvent(axis: axis))
         }
+    }
+
+    private func publishImpulse(_ event: ImpulseEvent) {
+        lastImpulse = event
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            self?.lastImpulse = nil
+        }
+    }
+}
+
+// MARK: - ImpulseEvent
+
+public struct ImpulseEvent: Equatable {
+    public enum Axis { case forward, backward, left, right }
+    public let axis: Axis
+    public let id: UUID = UUID()
+
+    public static func == (lhs: ImpulseEvent, rhs: ImpulseEvent) -> Bool {
+        lhs.id == rhs.id
     }
 }
 
