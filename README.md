@@ -23,9 +23,9 @@ Translation uses edge-triggered impulse detection: each detected step toggles mo
 
 ## Installation
 
-In Xcode: **File → Add Package Dependencies**, enter the repository URL, then add whichever products your target needs.
+**Xcode GUI**: File → Add Package Dependencies, enter the repository URL. In the product selection sheet that follows, tick every product you need and assign them to your target. If you skip this step the modules won't be found at compile time.
 
-In `Package.swift`:
+**`Package.swift`** — the `package:` parameter must match the `name` field in this package's manifest (`"GestureCamera"`), not the repository slug:
 
 ```swift
 dependencies: [
@@ -35,9 +35,9 @@ targets: [
     .target(
         name: "MyApp",
         dependencies: [
-            .product(name: "GestureCamera",          package: "gesture-camera"),
-            .product(name: "GestureCameraSceneKit",  package: "gesture-camera"), // if using SceneKit
-            .product(name: "GestureCameraMetalKit",  package: "gesture-camera"), // if using Metal
+            .product(name: "GestureCamera",          package: "GestureCamera"),
+            .product(name: "GestureCameraSceneKit",  package: "GestureCamera"), // if using SceneKit
+            .product(name: "GestureCameraMetalKit",  package: "GestureCamera"), // if using Metal
         ]
     )
 ]
