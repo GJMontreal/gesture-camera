@@ -2,8 +2,15 @@ import CoreMotion
 import UIKit
 
 /// Wraps CMMotionManager and delivers two streams from a single CMDeviceMotion feed:
-///   - **Attitude** deltas (yaw/pitch) relative to the reference captured at `start()`
-///   - **Translation impulses** detected from linear acceleration on the forward and lateral axes
+///   - **Attitude deltas** (yawDelta, pitchDelta) in radians, relative to the reference
+///     captured at `start()`. Both values are orientation-independent: yaw comes from
+///     `attitude.yaw` (world-frame compass heading) and pitch from `asin(-R.m33)`
+///     (screen-normal elevation angle). Neither depends on how the phone is held.
+///   - **Translation impulses** detected from linear acceleration.
+///
+/// When the interface orientation changes (portrait ↔ landscape), `attitude.yaw` shifts
+/// ~90° even though the physical look direction hasn't changed. `onRebaseline` fires so
+/// the controller can absorb the jump without moving the camera.
 ///
 /// All callbacks fire on the main thread.
 public final class MotionCameraDriver {
@@ -12,25 +19,24 @@ public final class MotionCameraDriver {
 
     // MARK: - Callbacks
 
-    /// Attitude change relative to the reference captured at `start()`.
-    /// (yaw, pitch) in radians. Not called before the reference is latched.
-    public var onAttitudeUpdate: ((_ yaw: Double, _ pitch: Double) -> Void)?
+    /// Yaw and pitch deltas in radians relative to the reference captured at `start()`.
+    /// Signs: positive yawDelta = phone turned right; positive pitchDelta = phone tilted up.
+    public var onAttitudeUpdate: ((_ yawDelta: Float, _ pitchDelta: Float) -> Void)?
 
-    /// Fired when a translation impulse is detected on the forward or lateral axis.
-    /// Each Int is -1, 0, or +1; non-zero means an impulse was detected in that direction.
-    /// The controller accumulates these into its persistent axis states.
+    /// Fired when interface orientation changes (portrait ↔ landscape).
+    /// attitude.yaw shifts ~90° at each transition; the driver re-latches its reference
+    /// so subsequent deltas are correct. The controller should update its own base
+    /// yaw/pitch to the current camera values so the camera doesn't jump.
+    public var onRebaseline: (() -> Void)?
+
+    /// Fired when a translation impulse is detected.
     public var onTranslationImpulse: ((_ forwardDelta: Int, _ lateralDelta: Int) -> Void)?
 
-    /// Called once if the hardware is not available.
     public var onUnavailable: ((UnavailableReason) -> Void)?
 
     // MARK: - Tuning
 
-    /// Acceleration magnitude (in g) that triggers an impulse. Default 0.4g.
     public var impulseThreshold: Double = 0.4
-
-    /// How long after an impulse the axis is locked, giving the user time to
-    /// return the phone to neutral without triggering a counter-impulse. Default 0.45s.
     public var impulseDeadTime: TimeInterval = 0.45
 
     // MARK: - State
@@ -40,37 +46,33 @@ public final class MotionCameraDriver {
     // MARK: - Private
 
     private let motionManager = CMMotionManager()
-    private var referenceAttitude: CMAttitude?
+    private var referenceYaw:       Float = 0
+    private var referenceElevation: Float = 0
+    private var referenceSet = false
+    private var lastInterfaceOrientation: UIInterfaceOrientation = .unknown
 
-    // Per-axis edge-trigger state.
-    // "above" tracks whether the last sample was over threshold, so we fire
-    // only on the onset crossing, not on every sample while held above threshold.
     private var forwardAbove   = false
     private var lateralAbove   = false
-    private var forwardReadyAt: TimeInterval = 0   // wall time when dead time expires
+    private var forwardReadyAt: TimeInterval = 0
     private var lateralReadyAt: TimeInterval = 0
 
     // MARK: - Lifecycle
 
     public init() {}
 
-    /// Begins device motion updates. Captures the first sample as the attitude
-    /// reference so yaw/pitch deltas start from zero.
     public func start() {
         guard motionManager.isDeviceMotionAvailable else {
             onUnavailable?(.hardwareNotPresent)
             return
         }
-        referenceAttitude = nil
-        forwardAbove = false
-        lateralAbove = false
+        referenceSet             = false
+        lastInterfaceOrientation = currentInterfaceOrientation
+        forwardAbove  = false
+        lateralAbove  = false
         forwardReadyAt = 0
         lateralReadyAt = 0
         motionManager.deviceMotionUpdateInterval = 1.0 / 60.0
-        motionManager.startDeviceMotionUpdates(
-            using: .xArbitraryZVertical,
-            to: .main
-        ) { [weak self] motion, _ in
+        motionManager.startDeviceMotionUpdates(using: .xArbitraryZVertical, to: .main) { [weak self] motion, _ in
             guard let self, let motion else { return }
             self.process(motion)
         }
@@ -79,30 +81,57 @@ public final class MotionCameraDriver {
 
     public func stop() {
         motionManager.stopDeviceMotionUpdates()
-        referenceAttitude = nil
-        isActive = false
+        referenceSet = false
+        isActive     = false
     }
 
     // MARK: - Private
 
+    private var currentInterfaceOrientation: UIInterfaceOrientation {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first?.interfaceOrientation ?? .portrait
+    }
+
     private func process(_ motion: CMDeviceMotion) {
-        // --- Attitude ---
-        if referenceAttitude == nil {
-            referenceAttitude = motion.attitude.copy() as? CMAttitude
+        let R = motion.attitude.rotationMatrix
+
+        // attitude.yaw  = world-frame heading (Z-up reference, orientation-independent)
+        // asin(-R.m33)  = elevation of the screen normal; immune to compass yaw
+        let currentYaw       = Float(motion.attitude.yaw)
+        let currentElevation = asin(max(-1, min(1, -Float(R.m33))))
+
+        // Re-baseline on interface orientation change. attitude.yaw jumps ~90° at each
+        // portrait↔landscape transition even though the phone hasn't moved relative to
+        // the user's body. Absorb the jump by treating current attitude as the new reference.
+        let orientation = currentInterfaceOrientation
+        if referenceSet && orientation != lastInterfaceOrientation {
+            referenceYaw       = currentYaw
+            referenceElevation = currentElevation
+            onRebaseline?()
+        }
+        lastInterfaceOrientation = orientation
+
+        if !referenceSet {
+            referenceYaw       = currentYaw
+            referenceElevation = currentElevation
+            referenceSet       = true
             return
         }
-        let relative = motion.attitude.copy() as! CMAttitude
-        relative.multiply(byInverseOf: referenceAttitude!)
-        onAttitudeUpdate?(relative.yaw, relative.pitch)
+
+        var deltaYaw = currentYaw - referenceYaw
+        if deltaYaw >  .pi { deltaYaw -= 2 * .pi }
+        if deltaYaw < -.pi { deltaYaw += 2 * .pi }
+
+        let deltaPitch = currentElevation - referenceElevation
+
+        // Negate yaw: CMAttitude yaw increases CCW (left turn), camera yaw convention
+        // is positive = right turn.
+        onAttitudeUpdate?(-deltaYaw, deltaPitch)
 
         // --- Translation impulses ---
-        // userAcceleration is in the device frame, gravity removed.
-        // Forward (-Z) is consistent across all orientations: pushing the phone
-        // away from the user always moves it along the phone's -Z axis.
-        // The lateral axis changes with screen orientation since the phone has
-        // been physically rotated.
         let accel = motion.userAcceleration
-        let now   = motion.timestamp   // seconds since system boot, monotonic
+        let now   = motion.timestamp
 
         detectImpulse(
             value:     -accel.z,
@@ -120,21 +149,15 @@ public final class MotionCameraDriver {
         )
     }
 
-    /// Returns the acceleration component that corresponds to screen-left/right,
-    /// accounting for the current device orientation.
     private func lateralAcceleration(_ accel: CMAcceleration) -> Double {
         switch UIDevice.current.orientation {
-        case .landscapeLeft:        return -accel.y
-        case .landscapeRight:       return  accel.y
-        case .portraitUpsideDown:   return -accel.x
-        default:                    return  accel.x   // portrait
+        case .landscapeLeft:      return -accel.y
+        case .landscapeRight:     return  accel.y
+        case .portraitUpsideDown: return -accel.x
+        default:                  return  accel.x
         }
     }
 
-    /// Edge-triggered threshold detector with dead time.
-    ///
-    /// Fires `onImpulse(±1)` once per threshold crossing, then locks the axis
-    /// for `impulseDeadTime` seconds so the return swing is ignored.
     private func detectImpulse(
         value:     Double,
         isAbove:   inout Bool,
@@ -143,16 +166,13 @@ public final class MotionCameraDriver {
         onImpulse: (Int) -> Void
     ) {
         let magnitude = abs(value)
-
         if magnitude > impulseThreshold {
-            // Rising edge: only fire once per crossing, and only outside dead time.
             if !isAbove && now >= readyAt {
-                isAbove  = true
-                readyAt  = now + impulseDeadTime
+                isAbove = true
+                readyAt = now + impulseDeadTime
                 onImpulse(value > 0 ? +1 : -1)
             }
         } else {
-            // Falling edge: reset so the next crossing can trigger again.
             isAbove = false
         }
     }

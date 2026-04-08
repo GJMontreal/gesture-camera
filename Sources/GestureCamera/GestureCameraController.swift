@@ -2,38 +2,44 @@ import Foundation
 import simd
 
 /// Manages camera position and orientation via three input channels:
-///   - **Motion** (gyro/accelerometer): yaw/pitch from attitude, translation from impulses
+///   - **Motion**: yaw and pitch from device attitude (no roll, ever)
 ///   - **Pan gesture**: translate along the camera's local X/Y plane
 ///   - **WASD**: continuous movement each `update(deltaTime:)` tick
 ///
-/// All velocity (WASD and motion impulse) uses the same constant `movementSpeed`.
-/// Motion translation is impulse-driven: each detected accelerometer event steps the
-/// axis state by ±1 (clamped to [-1, +1]). A counter-impulse steps it back toward zero.
-///
-/// Consumers drive the per-frame tick by calling `update(deltaTime:)` from a
-/// CADisplayLink or render loop on the main thread.
+/// Orientation is stored as separate scalar yaw and pitch values. The orientation
+/// quaternion in `transform` is derived from these each frame, which makes roll
+/// impossible regardless of input order or magnitude.
 @MainActor
 public final class GestureCameraController: ObservableObject {
 
     @Published public private(set) var transform: CameraTransform
     @Published public private(set) var isMotionEnabled: Bool = false
 
-    /// Movement speed in world units per second. Applies to both WASD and motion impulse.
+    /// Movement speed in world units per second.
     public var movementSpeed: Float = 3.0
 
-    /// Scales yaw and pitch from the motion driver. Negate to invert an axis.
-    public var motionSensitivity: Float = 1.0
+    /// Smoothing time constant (seconds) for attitude changes.
+    /// Higher = more dampening, more lag.
+    public var attitudeSmoothingTime: Float = 0.04
 
     // MARK: - Private state
 
     private let motionDriver: MotionCameraDriver
 
-    /// Camera orientation at the moment motion was enabled.
-    private var motionBaseOrientation: simd_quatf = .init(ix: 0, iy: 0, iz: 0, r: 1)
-    private var motionYaw:   Float = 0
-    private var motionPitch: Float = 0
+    // Camera orientation as independent scalars — the only source of truth for rotation.
+    // transform.orientation is rebuilt from these every frame.
+    private var cameraYaw:   Float = 0   // radians, positive = look right
+    private var cameraPitch: Float = 0   // radians, positive = look up, clamped ±85°
 
-    // WASD: held-key flags
+    // Motion baseline: orientation at the moment motion was enabled (or re-baselined).
+    private var motionBaseYaw:   Float = 0
+    private var motionBasePitch: Float = 0
+
+    // Motion target: updated by the motion callback, smoothed toward in update().
+    private var motionTargetYaw:   Float?
+    private var motionTargetPitch: Float?
+
+    // WASD held-key flags
     private var moveForward  = false
     private var moveBackward = false
     private var moveLeft     = false
@@ -41,10 +47,9 @@ public final class GestureCameraController: ObservableObject {
     private var moveUp       = false
     private var moveDown     = false
 
-    // Motion translation axis states: -1, 0, or +1.
-    // Set by impulse callbacks; persist until a counter-impulse steps them back.
-    private var motionForwardAxis: Int = 0   // +1 = moving forward, -1 = backward
-    private var motionLateralAxis: Int = 0   // +1 = moving right,   -1 = left
+    // Motion impulse axis states: -1, 0, or +1
+    private var motionForwardAxis: Int = 0
+    private var motionLateralAxis: Int = 0
 
     // MARK: - Init
 
@@ -55,12 +60,27 @@ public final class GestureCameraController: ObservableObject {
         self.transform = initialTransform
         self.motionDriver = motionDriver
 
-        motionDriver.onAttitudeUpdate = { [weak self] yaw, pitch in
-            self?.applyMotionAttitude(yaw: Float(yaw), pitch: Float(pitch))
+        // Extract initial yaw/pitch from the identity orientation.
+        extractYawPitch(from: initialTransform.orientation)
+
+        motionDriver.onAttitudeUpdate = { [weak self] yawDelta, pitchDelta in
+            guard let self else { return }
+            let targetYaw   = self.motionBaseYaw   + yawDelta
+            let targetPitch = (self.motionBasePitch + pitchDelta).clamped(to: -.pi/2 + 0.05 ... .pi/2 - 0.05)
+            self.motionTargetYaw   = targetYaw
+            self.motionTargetPitch = targetPitch
         }
 
-        motionDriver.onTranslationImpulse = { [weak self] forwardDelta, lateralDelta in
-            self?.applyTranslationImpulse(forwardDelta: forwardDelta, lateralDelta: lateralDelta)
+        // When interface orientation changes the driver re-latches its reference.
+        // Update our motion base to the current camera values so the camera doesn't jump.
+        motionDriver.onRebaseline = { [weak self] in
+            guard let self else { return }
+            self.motionBaseYaw   = self.cameraYaw
+            self.motionBasePitch = self.cameraPitch
+        }
+
+        motionDriver.onTranslationImpulse = { [weak self] fwdDelta, latDelta in
+            self?.applyTranslationImpulse(forwardDelta: fwdDelta, lateralDelta: latDelta)
         }
     }
 
@@ -69,13 +89,16 @@ public final class GestureCameraController: ObservableObject {
     public func toggleMotion() {
         if isMotionEnabled {
             motionDriver.stop()
+            motionTargetYaw   = nil
+            motionTargetPitch = nil
             motionForwardAxis = 0
             motionLateralAxis = 0
-            isMotionEnabled = false
+            isMotionEnabled   = false
         } else {
-            motionBaseOrientation = transform.orientation
-            motionYaw   = 0
-            motionPitch = 0
+            motionBaseYaw   = cameraYaw
+            motionBasePitch = cameraPitch
+            motionTargetYaw   = nil
+            motionTargetPitch = nil
             motionDriver.start()
             isMotionEnabled = true
         }
@@ -101,8 +124,7 @@ public final class GestureCameraController: ObservableObject {
     // MARK: - Pan gesture translation
 
     /// Translate the camera in its local X/Y plane.
-    /// Uses "drag world" semantics: dragging right moves the world right (camera left).
-    /// Call from a UIPanGestureRecognizer with point deltas zeroed each frame.
+    /// "Drag world" semantics: drag right moves camera left.
     public func applyTranslationGesture(dx: Float, dy: Float, sensitivity: Float = 0.01) {
         transform.position -= transform.right * (dx * sensitivity)
         transform.position += transform.up    * (dy * sensitivity)
@@ -114,9 +136,27 @@ public final class GestureCameraController: ObservableObject {
     public func update(deltaTime dt: Float) {
         guard dt > 0 else { return }
 
+        // --- Smooth orientation toward motion target ---
+        if let ty = motionTargetYaw, let tp = motionTargetPitch {
+            let alpha = 1 - exp(-dt / attitudeSmoothingTime)
+
+            // Shortest-path yaw interpolation
+            var yawDiff = ty - cameraYaw
+            if yawDiff >  .pi { yawDiff -= 2 * .pi }
+            if yawDiff < -.pi { yawDiff += 2 * .pi }
+            cameraYaw   += yawDiff * alpha
+            cameraPitch += (tp - cameraPitch) * alpha
+        }
+
+        // Rebuild orientation from yaw + pitch — roll is impossible this way.
+        // forward = (sin(yaw)*cos(pitch), sin(pitch), -cos(yaw)*cos(pitch))
+        transform.orientation =
+            simd_quatf(angle: -cameraYaw,   axis: SIMD3<Float>(0, 1, 0)) *
+            simd_quatf(angle:  cameraPitch, axis: SIMD3<Float>(1, 0, 0))
+
+        // --- Position ---
         var velocity = SIMD3<Float>.zero
 
-        // WASD (held keys) — camera-relative axes
         if moveForward  { velocity += transform.forward }
         if moveBackward { velocity -= transform.forward }
         if moveRight    { velocity += transform.right }
@@ -124,7 +164,6 @@ public final class GestureCameraController: ObservableObject {
         if moveUp       { velocity.y += 1 }
         if moveDown     { velocity.y -= 1 }
 
-        // Motion impulse — also camera-relative, same constant speed
         velocity += transform.forward * Float(motionForwardAxis)
         velocity += transform.right   * Float(motionLateralAxis)
 
@@ -135,17 +174,12 @@ public final class GestureCameraController: ObservableObject {
 
     // MARK: - Private
 
-    private func applyMotionAttitude(yaw: Float, pitch: Float) {
-        motionYaw   = yaw   * motionSensitivity
-        motionPitch = pitch * motionSensitivity
-        let yawQ   = simd_quatf(angle: -motionYaw,  axis: SIMD3<Float>(0, 1, 0))
-        let pitchQ = simd_quatf(angle: -motionPitch, axis: SIMD3<Float>(1, 0, 0))
-        transform.orientation = simd_normalize(motionBaseOrientation * yawQ * pitchQ)
+    private func extractYawPitch(from orientation: simd_quatf) {
+        let fwd = orientation.act(SIMD3<Float>(0, 0, -1))
+        cameraYaw   = atan2(fwd.x, -fwd.z)
+        cameraPitch = asin(max(-1, min(1, fwd.y)))
     }
 
-    /// Steps axis states by the received deltas, clamped to [-1, +1].
-    /// Because the constant-velocity model doesn't weight magnitude, each impulse
-    /// is exactly one step: a counter-impulse from +1 lands at 0 (stop), not -1.
     private func applyTranslationImpulse(forwardDelta: Int, lateralDelta: Int) {
         if forwardDelta != 0 {
             motionForwardAxis = (motionForwardAxis + forwardDelta).clamped(to: -1...1)
@@ -157,6 +191,12 @@ public final class GestureCameraController: ObservableObject {
 }
 
 // MARK: - Helpers
+
+private extension Float {
+    func clamped(to range: ClosedRange<Float>) -> Float {
+        Swift.min(Swift.max(self, range.lowerBound), range.upperBound)
+    }
+}
 
 private extension Int {
     func clamped(to range: ClosedRange<Int>) -> Int {
