@@ -56,15 +56,16 @@ struct CubeSceneView: UIViewRepresentable {
         box.firstMaterial?.shininess = 50
         scene.rootNode.addChildNode(SCNNode(geometry: box))
 
-        // Floor grid (checkerboard via diffuse tile)
-        let floor = SCNFloor()
-        floor.reflectivity = 0
+        // Floor grid (large plane, checkerboard texture)
+        let plane = SCNPlane(width: 100, height: 100)
         let checker = checkerboardImage(size: 128, tileCount: 4)
-        floor.firstMaterial?.diffuse.contents = checker
-        floor.firstMaterial?.diffuse.wrapS = .repeat
-        floor.firstMaterial?.diffuse.wrapT = .repeat
-        let floorNode = SCNNode(geometry: floor)
+        plane.firstMaterial?.diffuse.contents = checker
+        plane.firstMaterial?.diffuse.wrapS = .repeat
+        plane.firstMaterial?.diffuse.wrapT = .repeat
+        plane.firstMaterial?.isDoubleSided = true
+        let floorNode = SCNNode(geometry: plane)
         floorNode.simdPosition = SIMD3<Float>(0, -0.5, 0)
+        floorNode.eulerAngles = SCNVector3(-Float.pi / 2, 0, 0)
         scene.rootNode.addChildNode(floorNode)
 
         // Ambient light
