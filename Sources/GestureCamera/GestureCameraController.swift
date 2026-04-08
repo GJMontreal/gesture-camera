@@ -22,6 +22,13 @@ public final class GestureCameraController: ObservableObject {
     /// Higher = more dampening, more lag.
     public var attitudeSmoothingTime: Float = 0.04
 
+    /// When true, `update(deltaTime:)` skips all position changes and clears
+    /// any active movement state. Set this while UI overlays (settings, menus)
+    /// are on screen so the camera doesn't drift.
+    public var isPaused: Bool = false {
+        didSet { if isPaused { clearMovementState() } }
+    }
+
     /// Inverts both yaw and pitch axes for touch rotation gestures.
     @Published public var invertTouchGestures: Bool = true
 
@@ -175,6 +182,8 @@ public final class GestureCameraController: ObservableObject {
             simd_quatf(angle:  cameraPitch, axis: SIMD3<Float>(1, 0, 0))
 
         // --- Position ---
+        guard !isPaused else { return }
+
         // WASD and motion impulse always move along world-horizontal axes so that
         // looking up/down doesn't affect the movement direction.
         // Derive horizontal forward/right from yaw only (no pitch component).
@@ -199,6 +208,13 @@ public final class GestureCameraController: ObservableObject {
     }
 
     // MARK: - Private
+
+    private func clearMovementState() {
+        moveForward  = false; moveBackward = false
+        moveLeft     = false; moveRight    = false
+        moveUp       = false; moveDown     = false
+        motionForwardAxis = 0; motionLateralAxis = 0
+    }
 
     private func extractYawPitch(from orientation: simd_quatf) {
         let fwd = orientation.act(SIMD3<Float>(0, 0, -1))

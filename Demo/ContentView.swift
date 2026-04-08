@@ -31,5 +31,8 @@ struct ContentView: View {
         .sheet(isPresented: $showSettings) {
             CameraSettingsView(controller: controller)
         }
+        .onChange(of: showSettings) { isShowing in
+            controller.isPaused = isShowing
+        }
     }
 }
