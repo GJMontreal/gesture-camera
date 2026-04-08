@@ -26,6 +26,12 @@ public struct WASDOverlayView: View {
                 verticalControl.padding([.trailing, .bottom], 20)
             }
         }
+        .onDisappear {
+            for direction in [GestureCameraController.MoveDirection.forward, .backward,
+                              .left, .right, .up, .down] {
+                controller.setMoving(direction, active: false)
+            }
+        }
     }
 
     // MARK: - D-pad (left thumb)
