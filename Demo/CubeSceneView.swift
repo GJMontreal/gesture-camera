@@ -130,7 +130,7 @@ struct CubeSceneView: UIViewRepresentable {
             guard gesture.state == .changed else { return }
             let delta = gesture.translation(in: gesture.view)
             gesture.setTranslation(.zero, in: gesture.view)
-            controller.applyTranslationGesture(
+            controller.applyRotationGesture(
                 dx: Float(delta.x),
                 dy: Float(delta.y)
             )

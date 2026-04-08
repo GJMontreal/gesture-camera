@@ -121,13 +121,14 @@ public final class GestureCameraController: ObservableObject {
         }
     }
 
-    // MARK: - Pan gesture translation
+    // MARK: - Touch rotation gesture
 
-    /// Translate the camera in its local X/Y plane.
-    /// "Drag world" semantics: drag right moves camera left.
-    public func applyTranslationGesture(dx: Float, dy: Float, sensitivity: Float = 0.01) {
-        transform.position -= transform.right * (dx * sensitivity)
-        transform.position += transform.up    * (dy * sensitivity)
+    /// Rotate the camera via a drag gesture (yaw and pitch only, never roll).
+    /// Call from a UIPanGestureRecognizer with deltas zeroed each frame.
+    public func applyRotationGesture(dx: Float, dy: Float, sensitivity: Float = 0.005) {
+        cameraYaw   -= dx * sensitivity
+        cameraPitch += dy * sensitivity
+        cameraPitch  = cameraPitch.clamped(to: -.pi/2 + 0.05 ... .pi/2 - 0.05)
     }
 
     // MARK: - Per-frame update
@@ -155,17 +156,23 @@ public final class GestureCameraController: ObservableObject {
             simd_quatf(angle:  cameraPitch, axis: SIMD3<Float>(1, 0, 0))
 
         // --- Position ---
+        // WASD and motion impulse always move along world-horizontal axes so that
+        // looking up/down doesn't affect the movement direction.
+        // Derive horizontal forward/right from yaw only (no pitch component).
+        let hForward = SIMD3<Float>( sin(cameraYaw), 0, -cos(cameraYaw))
+        let hRight   = SIMD3<Float>( cos(cameraYaw), 0,  sin(cameraYaw))
+
         var velocity = SIMD3<Float>.zero
 
-        if moveForward  { velocity += transform.forward }
-        if moveBackward { velocity -= transform.forward }
-        if moveRight    { velocity += transform.right }
-        if moveLeft     { velocity -= transform.right }
+        if moveForward  { velocity += hForward }
+        if moveBackward { velocity -= hForward }
+        if moveRight    { velocity += hRight }
+        if moveLeft     { velocity -= hRight }
         if moveUp       { velocity.y += 1 }
         if moveDown     { velocity.y -= 1 }
 
-        velocity += transform.forward * Float(motionForwardAxis)
-        velocity += transform.right   * Float(motionLateralAxis)
+        velocity += hForward * Float(motionForwardAxis)
+        velocity += hRight   * Float(motionLateralAxis)
 
         if simd_length_squared(velocity) > 0 {
             transform.position += simd_normalize(velocity) * movementSpeed * dt
