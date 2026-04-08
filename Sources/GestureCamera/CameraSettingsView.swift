@@ -42,38 +42,44 @@ public struct CameraSettingsView: View {
 
                 // MARK: Translation (motion impulse)
                 Section {
-                    LabeledSlider(
-                        label: "Fwd / Back",
-                        value: Binding(
-                            get: { 1.1 - controller.forwardImpulseThreshold },
-                            set: { controller.forwardImpulseThreshold = 1.1 - $0 }
-                        ),
-                        in: 0.1...1.0,
-                        format: { _ in sensitivityLabel(controller.forwardImpulseThreshold) }
-                    )
-                    LabeledSlider(
-                        label: "Left / Right",
-                        value: Binding(
-                            get: { 1.1 - controller.lateralImpulseThreshold },
-                            set: { controller.lateralImpulseThreshold = 1.1 - $0 }
-                        ),
-                        in: 0.1...1.0,
-                        format: { _ in sensitivityLabel(controller.lateralImpulseThreshold) }
-                    )
-                    LabeledSlider(
-                        label: "Up / Down",
-                        value: Binding(
-                            get: { 1.1 - controller.verticalImpulseThreshold },
-                            set: { controller.verticalImpulseThreshold = 1.1 - $0 }
-                        ),
-                        in: 0.1...1.0,
-                        format: { _ in sensitivityLabel(controller.verticalImpulseThreshold) }
-                    )
-                    Button("Test Translation…") {
-                        showTranslationTest = true
-                    }
+                    Toggle("Step Detection", isOn: $controller.isMotionTranslationEnabled)
                 } header: {
                     Text("Translation (Step Detection)")
+                }
+
+                if controller.isMotionTranslationEnabled {
+                    Section("Sensitivity") {
+                        LabeledSlider(
+                            label: "Fwd / Back",
+                            value: Binding(
+                                get: { 1.1 - controller.forwardImpulseThreshold },
+                                set: { controller.forwardImpulseThreshold = 1.1 - $0 }
+                            ),
+                            in: 0.1...1.0,
+                            format: { _ in sensitivityLabel(controller.forwardImpulseThreshold) }
+                        )
+                        LabeledSlider(
+                            label: "Left / Right",
+                            value: Binding(
+                                get: { 1.1 - controller.lateralImpulseThreshold },
+                                set: { controller.lateralImpulseThreshold = 1.1 - $0 }
+                            ),
+                            in: 0.1...1.0,
+                            format: { _ in sensitivityLabel(controller.lateralImpulseThreshold) }
+                        )
+                        LabeledSlider(
+                            label: "Up / Down",
+                            value: Binding(
+                                get: { 1.1 - controller.verticalImpulseThreshold },
+                                set: { controller.verticalImpulseThreshold = 1.1 - $0 }
+                            ),
+                            in: 0.1...1.0,
+                            format: { _ in sensitivityLabel(controller.verticalImpulseThreshold) }
+                        )
+                        Button("Test Translation…") {
+                            showTranslationTest = true
+                        }
+                    }
                 }
             }
             .navigationTitle("Camera Settings")

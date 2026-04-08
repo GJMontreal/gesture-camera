@@ -9,6 +9,7 @@ public struct CameraTranslationTestView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var lit: Set<ImpulseEvent.Axis> = []
+    @State private var translationWasEnabled = false
 
     public init(controller: GestureCameraController) {
         self.controller = controller
@@ -76,10 +77,13 @@ public struct CameraTranslationTestView: View {
                 }
             }
             .onAppear {
+                translationWasEnabled = controller.isMotionTranslationEnabled
+                controller.isMotionTranslationEnabled = true
                 if !controller.isMotionEnabled { controller.toggleMotion() }
             }
             .onDisappear {
                 if controller.isMotionEnabled { controller.toggleMotion() }
+                controller.isMotionTranslationEnabled = translationWasEnabled
             }
             .onChange(of: controller.lastImpulse) { event in
                 guard let event else { return }

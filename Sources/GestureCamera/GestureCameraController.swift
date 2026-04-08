@@ -29,6 +29,12 @@ public final class GestureCameraController: ObservableObject {
         didSet { if isPaused { clearMovementState() } }
     }
 
+    /// When false, accelerometer step detection is disabled and the camera
+    /// will not translate via physical movement. Orientation (yaw/pitch) is unaffected.
+    @Published public var isMotionTranslationEnabled: Bool = true {
+        didSet { if !isMotionTranslationEnabled { motionForwardAxis = 0; motionLateralAxis = 0; motionVerticalAxis = 0 } }
+    }
+
     /// Inverts both yaw and pitch axes for touch rotation gestures.
     @Published public var invertTouchGestures: Bool = true
 
@@ -113,7 +119,8 @@ public final class GestureCameraController: ObservableObject {
         }
 
         motionDriver.onTranslationImpulse = { [weak self] fwdDelta, latDelta, vertDelta in
-            self?.applyTranslationImpulse(forwardDelta: fwdDelta, lateralDelta: latDelta, verticalDelta: vertDelta)
+            guard let self, self.isMotionTranslationEnabled else { return }
+            self.applyTranslationImpulse(forwardDelta: fwdDelta, lateralDelta: latDelta, verticalDelta: vertDelta)
         }
     }
 
