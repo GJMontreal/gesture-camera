@@ -1,0 +1,35 @@
+name: GestureCameraDemo
+
+packages:
+  GestureCamera:
+    path: ..
+
+targets:
+  GestureCameraDemo:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: .
+        excludes:
+          - project.yml
+          - "*.xcodeproj"
+    dependencies:
+      - package: GestureCamera
+        product: GestureCamera
+      - package: GestureCamera
+        product: GestureCameraSceneKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.gjmontreal.gesturecamerademo
+        SWIFT_VERSION: "5.9"
+    info:
+      path: Info.plist
+      properties:
+        UILaunchScreen: {}
+        NSMotionUsageDescription: "Motion sensors power gesture-based camera control."
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
