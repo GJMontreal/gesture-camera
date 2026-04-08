@@ -55,6 +55,16 @@ public struct CameraTranslationTestView: View {
                         threshold: controller.lateralImpulseThreshold,
                         activeAxes: [.left, .right]
                     )
+                    axisSlider(
+                        label: "Up / Down",
+                        systemImage: "arrow.up.arrow.down",
+                        value: Binding(
+                            get: { 1.1 - controller.verticalImpulseThreshold },
+                            set: { controller.verticalImpulseThreshold = 1.1 - $0 }
+                        ),
+                        threshold: controller.verticalImpulseThreshold,
+                        activeAxes: [.up, .down]
+                    )
                 }
                 .padding(24)
             }
@@ -85,21 +95,30 @@ public struct CameraTranslationTestView: View {
     // MARK: - Direction indicator
 
     private var directionIndicator: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 10) {
-                blank
-                arrowCell("↑", axis: .forward)
-                blank
+        HStack(alignment: .center, spacing: 24) {
+            // Forward/lateral cross
+            VStack(spacing: 10) {
+                HStack(spacing: 10) {
+                    blank
+                    arrowCell("↑", axis: .forward)
+                    blank
+                }
+                HStack(spacing: 10) {
+                    arrowCell("←", axis: .left)
+                    blank
+                    arrowCell("→", axis: .right)
+                }
+                HStack(spacing: 10) {
+                    blank
+                    arrowCell("↓", axis: .backward)
+                    blank
+                }
             }
-            HStack(spacing: 10) {
-                arrowCell("←", axis: .left)
-                blank
-                arrowCell("→", axis: .right)
-            }
-            HStack(spacing: 10) {
-                blank
-                arrowCell("↓", axis: .backward)
-                blank
+
+            // Vertical column
+            VStack(spacing: 10) {
+                arrowCell("↑", axis: .up)
+                arrowCell("↓", axis: .down)
             }
         }
     }

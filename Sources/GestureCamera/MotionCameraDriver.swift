@@ -30,7 +30,7 @@ public final class MotionCameraDriver {
     public var onRebaseline: (() -> Void)?
 
     /// Fired when a translation impulse is detected.
-    public var onTranslationImpulse: ((_ forwardDelta: Int, _ lateralDelta: Int) -> Void)?
+    public var onTranslationImpulse: ((_ forwardDelta: Int, _ lateralDelta: Int, _ verticalDelta: Int) -> Void)?
 
     public var onUnavailable: ((UnavailableReason) -> Void)?
 
@@ -43,6 +43,11 @@ public final class MotionCameraDriver {
     /// Threshold for left/right impulse detection (phone's X or Y axis, orientation-corrected).
     /// Lower = more sensitive. Range 0.1 … 1.0. Default 0.4.
     public var lateralImpulseThreshold: Double = 0.4
+
+    /// Threshold for up/down impulse detection (world-vertical axis).
+    /// Higher default to avoid false triggers from walking bounce.
+    /// Lower = more sensitive. Range 0.1 … 1.0. Default 0.6.
+    public var verticalImpulseThreshold: Double = 0.6
 
     public var impulseDeadTime: TimeInterval = 0.45
 
@@ -60,8 +65,10 @@ public final class MotionCameraDriver {
 
     private var forwardAbove   = false
     private var lateralAbove   = false
-    private var forwardReadyAt: TimeInterval = 0
-    private var lateralReadyAt: TimeInterval = 0
+    private var verticalAbove  = false
+    private var forwardReadyAt:  TimeInterval = 0
+    private var lateralReadyAt:  TimeInterval = 0
+    private var verticalReadyAt: TimeInterval = 0
 
     // MARK: - Lifecycle
 
@@ -74,10 +81,12 @@ public final class MotionCameraDriver {
         }
         referenceSet             = false
         lastInterfaceOrientation = currentInterfaceOrientation
-        forwardAbove  = false
-        lateralAbove  = false
-        forwardReadyAt = 0
-        lateralReadyAt = 0
+        forwardAbove   = false
+        lateralAbove   = false
+        verticalAbove  = false
+        forwardReadyAt  = 0
+        lateralReadyAt  = 0
+        verticalReadyAt = 0
         motionManager.deviceMotionUpdateInterval = 1.0 / 60.0
         motionManager.startDeviceMotionUpdates(using: .xArbitraryZVertical, to: .main) { [weak self] motion, _ in
             guard let self, let motion else { return }
@@ -146,7 +155,7 @@ public final class MotionCameraDriver {
             isAbove:   &forwardAbove,
             readyAt:   &forwardReadyAt,
             now:       now,
-            onImpulse: { [weak self] delta in self?.onTranslationImpulse?(delta, 0) }
+            onImpulse: { [weak self] delta in self?.onTranslationImpulse?(delta, 0, 0) }
         )
         detectImpulse(
             value:     -lateralAcceleration(accel),
@@ -154,7 +163,18 @@ public final class MotionCameraDriver {
             isAbove:   &lateralAbove,
             readyAt:   &lateralReadyAt,
             now:       now,
-            onImpulse: { [weak self] delta in self?.onTranslationImpulse?(0, delta) }
+            onImpulse: { [weak self] delta in self?.onTranslationImpulse?(0, delta, 0) }
+        )
+        // World-vertical acceleration: project device-frame accel onto world-up (Z row of R).
+        // xArbitraryZVertical guarantees reference-frame Z = world up.
+        let worldVertical = R.m31 * accel.x + R.m32 * accel.y + R.m33 * accel.z
+        detectImpulse(
+            value:     worldVertical,
+            threshold: verticalImpulseThreshold,
+            isAbove:   &verticalAbove,
+            readyAt:   &verticalReadyAt,
+            now:       now,
+            onImpulse: { [weak self] delta in self?.onTranslationImpulse?(0, 0, delta) }
         )
     }
 

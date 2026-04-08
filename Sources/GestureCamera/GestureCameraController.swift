@@ -44,6 +44,13 @@ public final class GestureCameraController: ObservableObject {
         set { motionDriver.lateralImpulseThreshold = newValue }
     }
 
+    /// Threshold for up/down impulse detection (world-vertical). Higher default avoids
+    /// false triggers from walking bounce. Lower = more sensitive. Range 0.1 … 1.0.
+    public var verticalImpulseThreshold: Double {
+        get { motionDriver.verticalImpulseThreshold }
+        set { motionDriver.verticalImpulseThreshold = newValue }
+    }
+
     /// Fired when an impulse is detected. Clears automatically after 0.3 s.
     @Published public private(set) var lastImpulse: ImpulseEvent?
 
@@ -73,8 +80,9 @@ public final class GestureCameraController: ObservableObject {
     private var moveDown     = false
 
     // Motion impulse axis states: -1, 0, or +1
-    private var motionForwardAxis: Int = 0
-    private var motionLateralAxis: Int = 0
+    private var motionForwardAxis:   Int = 0
+    private var motionLateralAxis:   Int = 0
+    private var motionVerticalAxis:  Int = 0
 
     // MARK: - Init
 
@@ -104,8 +112,8 @@ public final class GestureCameraController: ObservableObject {
             self.motionBasePitch = self.cameraPitch
         }
 
-        motionDriver.onTranslationImpulse = { [weak self] fwdDelta, latDelta in
-            self?.applyTranslationImpulse(forwardDelta: fwdDelta, lateralDelta: latDelta)
+        motionDriver.onTranslationImpulse = { [weak self] fwdDelta, latDelta, vertDelta in
+            self?.applyTranslationImpulse(forwardDelta: fwdDelta, lateralDelta: latDelta, verticalDelta: vertDelta)
         }
     }
 
@@ -116,9 +124,10 @@ public final class GestureCameraController: ObservableObject {
             motionDriver.stop()
             motionTargetYaw   = nil
             motionTargetPitch = nil
-            motionForwardAxis = 0
-            motionLateralAxis = 0
-            isMotionEnabled   = false
+            motionForwardAxis  = 0
+            motionLateralAxis  = 0
+            motionVerticalAxis = 0
+            isMotionEnabled    = false
         } else {
             motionBaseYaw   = cameraYaw
             motionBasePitch = cameraPitch
@@ -199,8 +208,9 @@ public final class GestureCameraController: ObservableObject {
         if moveUp       { velocity.y += 1 }
         if moveDown     { velocity.y -= 1 }
 
-        velocity += hForward * Float(motionForwardAxis)
-        velocity += hRight   * Float(motionLateralAxis)
+        velocity += hForward               * Float(motionForwardAxis)
+        velocity += hRight                 * Float(motionLateralAxis)
+        velocity += SIMD3<Float>(0, 1, 0)  * Float(motionVerticalAxis)
 
         if simd_length_squared(velocity) > 0 {
             transform.position += simd_normalize(velocity) * movementSpeed * dt
@@ -213,7 +223,7 @@ public final class GestureCameraController: ObservableObject {
         moveForward  = false; moveBackward = false
         moveLeft     = false; moveRight    = false
         moveUp       = false; moveDown     = false
-        motionForwardAxis = 0; motionLateralAxis = 0
+        motionForwardAxis = 0; motionLateralAxis = 0; motionVerticalAxis = 0
     }
 
     private func extractYawPitch(from orientation: simd_quatf) {
@@ -222,16 +232,18 @@ public final class GestureCameraController: ObservableObject {
         cameraPitch = asin(max(-1, min(1, fwd.y)))
     }
 
-    private func applyTranslationImpulse(forwardDelta: Int, lateralDelta: Int) {
+    private func applyTranslationImpulse(forwardDelta: Int, lateralDelta: Int, verticalDelta: Int) {
         if forwardDelta != 0 {
             motionForwardAxis = (motionForwardAxis + forwardDelta).clamped(to: -1...1)
-            let axis: ImpulseEvent.Axis = forwardDelta > 0 ? .forward : .backward
-            publishImpulse(ImpulseEvent(axis: axis))
+            publishImpulse(ImpulseEvent(axis: forwardDelta > 0 ? .forward : .backward))
         }
         if lateralDelta != 0 {
             motionLateralAxis = (motionLateralAxis + lateralDelta).clamped(to: -1...1)
-            let axis: ImpulseEvent.Axis = lateralDelta > 0 ? .right : .left
-            publishImpulse(ImpulseEvent(axis: axis))
+            publishImpulse(ImpulseEvent(axis: lateralDelta > 0 ? .right : .left))
+        }
+        if verticalDelta != 0 {
+            motionVerticalAxis = (motionVerticalAxis + verticalDelta).clamped(to: -1...1)
+            publishImpulse(ImpulseEvent(axis: verticalDelta > 0 ? .up : .down))
         }
     }
 
@@ -247,7 +259,7 @@ public final class GestureCameraController: ObservableObject {
 // MARK: - ImpulseEvent
 
 public struct ImpulseEvent: Equatable {
-    public enum Axis { case forward, backward, left, right }
+    public enum Axis { case forward, backward, left, right, up, down }
     public let axis: Axis
     public let id: UUID = UUID()
 

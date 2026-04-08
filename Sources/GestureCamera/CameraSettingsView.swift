@@ -60,6 +60,15 @@ public struct CameraSettingsView: View {
                         in: 0.1...1.0,
                         format: { _ in sensitivityLabel(controller.lateralImpulseThreshold) }
                     )
+                    LabeledSlider(
+                        label: "Up / Down",
+                        value: Binding(
+                            get: { 1.1 - controller.verticalImpulseThreshold },
+                            set: { controller.verticalImpulseThreshold = 1.1 - $0 }
+                        ),
+                        in: 0.1...1.0,
+                        format: { _ in sensitivityLabel(controller.verticalImpulseThreshold) }
+                    )
                     Button("Test Translation…") {
                         showTranslationTest = true
                     }
