@@ -57,6 +57,10 @@ public final class GestureCameraController: ObservableObject {
         set { motionDriver.verticalImpulseThreshold = newValue }
     }
 
+    /// True while any WASD/arrow button is actively held.
+    /// Use this to suppress auto-hide timers in your overlay UI.
+    @Published public private(set) var isMoving: Bool = false
+
     /// Fired when an impulse is detected. Clears automatically after 0.3 s.
     @Published public private(set) var lastImpulse: ImpulseEvent?
 
@@ -160,6 +164,7 @@ public final class GestureCameraController: ObservableObject {
         case .up:       moveUp       = active
         case .down:     moveDown     = active
         }
+        isMoving = moveForward || moveBackward || moveLeft || moveRight || moveUp || moveDown
     }
 
     // MARK: - Touch rotation gesture
@@ -231,6 +236,7 @@ public final class GestureCameraController: ObservableObject {
         moveLeft     = false; moveRight    = false
         moveUp       = false; moveDown     = false
         motionForwardAxis = 0; motionLateralAxis = 0; motionVerticalAxis = 0
+        isMoving = false
     }
 
     private func extractYawPitch(from orientation: simd_quatf) {
