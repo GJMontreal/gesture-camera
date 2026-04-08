@@ -43,13 +43,22 @@ public struct CameraSettingsView: View {
                 // MARK: Translation (motion impulse)
                 Section {
                     LabeledSlider(
-                        label: "Sensitivity",
+                        label: "Fwd / Back",
                         value: Binding(
-                            get: { 1.1 - controller.impulseThreshold },
-                            set: { controller.impulseThreshold = 1.1 - $0 }
+                            get: { 1.1 - controller.forwardImpulseThreshold },
+                            set: { controller.forwardImpulseThreshold = 1.1 - $0 }
                         ),
                         in: 0.1...1.0,
-                        format: { _ in sensitivityLabel(controller.impulseThreshold) }
+                        format: { _ in sensitivityLabel(controller.forwardImpulseThreshold) }
+                    )
+                    LabeledSlider(
+                        label: "Left / Right",
+                        value: Binding(
+                            get: { 1.1 - controller.lateralImpulseThreshold },
+                            set: { controller.lateralImpulseThreshold = 1.1 - $0 }
+                        ),
+                        in: 0.1...1.0,
+                        format: { _ in sensitivityLabel(controller.lateralImpulseThreshold) }
                     )
                     Button("Test Translation…") {
                         showTranslationTest = true

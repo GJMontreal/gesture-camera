@@ -16,36 +16,47 @@ public struct CameraTranslationTestView: View {
 
     public var body: some View {
         NavigationStack {
-            VStack(spacing: 32) {
-                Spacer()
+            VStack(spacing: 0) {
+                // Direction indicator
+                VStack(spacing: 12) {
+                    Spacer()
+                    Text("Walk in each direction and adjust until steps\nregister reliably without false triggers.")
+                        .font(.subheadline)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal)
 
-                Text("Walk forward, backward, left, and right.\nEach step should light up the matching arrow.")
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal)
+                    directionIndicator
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
 
-                directionIndicator
+                Divider()
 
-                Spacer()
-
-                // Sensitivity slider
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("Sensitivity")
-                        Spacer()
-                        Text(sensitivityLabel(controller.impulseThreshold))
-                            .foregroundStyle(.secondary)
-                    }
-                    Slider(
+                // Sliders — always visible below the indicator
+                VStack(spacing: 20) {
+                    axisSlider(
+                        label: "Fwd / Back",
+                        systemImage: "arrow.up.arrow.down",
                         value: Binding(
-                            get: { 1.1 - controller.impulseThreshold },
-                            set: { controller.impulseThreshold = 1.1 - $0 }
+                            get: { 1.1 - controller.forwardImpulseThreshold },
+                            set: { controller.forwardImpulseThreshold = 1.1 - $0 }
                         ),
-                        in: 0.1...1.0
+                        threshold: controller.forwardImpulseThreshold,
+                        activeAxes: [.forward, .backward]
+                    )
+                    axisSlider(
+                        label: "Left / Right",
+                        systemImage: "arrow.left.arrow.right",
+                        value: Binding(
+                            get: { 1.1 - controller.lateralImpulseThreshold },
+                            set: { controller.lateralImpulseThreshold = 1.1 - $0 }
+                        ),
+                        threshold: controller.lateralImpulseThreshold,
+                        activeAxes: [.left, .right]
                     )
                 }
-                .padding(.horizontal, 32)
-                .padding(.bottom, 32)
+                .padding(24)
             }
             .navigationTitle("Test Translation")
             .navigationBarTitleDisplayMode(.inline)
@@ -74,18 +85,18 @@ public struct CameraTranslationTestView: View {
     // MARK: - Direction indicator
 
     private var directionIndicator: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 8) {
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
                 blank
                 arrowCell("↑", axis: .forward)
                 blank
             }
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 arrowCell("←", axis: .left)
                 blank
                 arrowCell("→", axis: .right)
             }
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 blank
                 arrowCell("↓", axis: .backward)
                 blank
@@ -100,21 +111,47 @@ public struct CameraTranslationTestView: View {
     private func arrowCell(_ symbol: String, axis: ImpulseEvent.Axis) -> some View {
         let active = lit.contains(axis)
         return Text(symbol)
-            .font(.system(size: 28, weight: .semibold))
+            .font(.system(size: 30, weight: .semibold))
             .frame(width: cellSize, height: cellSize)
             .background(active ? Color.green.opacity(0.85) : Color.secondary.opacity(0.15))
             .foregroundStyle(active ? .white : .primary)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .animation(.easeOut(duration: 0.15), value: active)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .animation(.easeOut(duration: 0.12), value: active)
     }
 
-    private let cellSize: CGFloat = 64
+    private let cellSize: CGFloat = 72
+
+    // MARK: - Axis slider
+
+    private func axisSlider(
+        label: String,
+        systemImage: String,
+        value: Binding<Double>,
+        threshold: Double,
+        activeAxes: Set<ImpulseEvent.Axis>
+    ) -> some View {
+        let isActive = !lit.isDisjoint(with: activeAxes)
+        return VStack(spacing: 6) {
+            HStack {
+                Image(systemName: systemImage)
+                    .foregroundStyle(isActive ? .green : .secondary)
+                    .animation(.easeOut(duration: 0.12), value: isActive)
+                Text(label)
+                    .fontWeight(.medium)
+                Spacer()
+                Text(sensitivityLabel(threshold))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            Slider(value: value, in: 0.1...1.0)
+        }
+    }
 
     private func sensitivityLabel(_ threshold: Double) -> String {
         switch threshold {
-        case ..<0.2: return "High"
-        case ..<0.5: return "Medium"
-        default:     return "Low"
+        case ..<0.25: return "High"
+        case ..<0.55: return "Medium"
+        default:      return "Low"
         }
     }
 }

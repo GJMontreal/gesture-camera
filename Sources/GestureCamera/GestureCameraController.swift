@@ -25,11 +25,16 @@ public final class GestureCameraController: ObservableObject {
     /// Inverts both yaw and pitch axes for touch rotation gestures.
     @Published public var invertTouchGestures: Bool = true
 
-    /// Acceleration magnitude required to trigger a translation impulse.
-    /// Lower = more sensitive. Range 0.1 … 1.0. Default 0.4.
-    public var impulseThreshold: Double {
-        get { motionDriver.impulseThreshold }
-        set { motionDriver.impulseThreshold = newValue }
+    /// Threshold for forward/backward step detection. Lower = more sensitive. Range 0.1 … 1.0.
+    public var forwardImpulseThreshold: Double {
+        get { motionDriver.forwardImpulseThreshold }
+        set { motionDriver.forwardImpulseThreshold = newValue }
+    }
+
+    /// Threshold for left/right step detection. Lower = more sensitive. Range 0.1 … 1.0.
+    public var lateralImpulseThreshold: Double {
+        get { motionDriver.lateralImpulseThreshold }
+        set { motionDriver.lateralImpulseThreshold = newValue }
     }
 
     /// Fired when an impulse is detected. Clears automatically after 0.3 s.

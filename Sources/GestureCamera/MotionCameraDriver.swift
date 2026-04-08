@@ -36,7 +36,14 @@ public final class MotionCameraDriver {
 
     // MARK: - Tuning
 
-    public var impulseThreshold: Double = 0.4
+    /// Threshold for forward/backward impulse detection (phone's Z axis).
+    /// Lower = more sensitive. Range 0.1 … 1.0. Default 0.4.
+    public var forwardImpulseThreshold: Double = 0.4
+
+    /// Threshold for left/right impulse detection (phone's X or Y axis, orientation-corrected).
+    /// Lower = more sensitive. Range 0.1 … 1.0. Default 0.4.
+    public var lateralImpulseThreshold: Double = 0.4
+
     public var impulseDeadTime: TimeInterval = 0.45
 
     // MARK: - State
@@ -135,6 +142,7 @@ public final class MotionCameraDriver {
 
         detectImpulse(
             value:     accel.z,
+            threshold: forwardImpulseThreshold,
             isAbove:   &forwardAbove,
             readyAt:   &forwardReadyAt,
             now:       now,
@@ -142,6 +150,7 @@ public final class MotionCameraDriver {
         )
         detectImpulse(
             value:     -lateralAcceleration(accel),
+            threshold: lateralImpulseThreshold,
             isAbove:   &lateralAbove,
             readyAt:   &lateralReadyAt,
             now:       now,
@@ -160,13 +169,14 @@ public final class MotionCameraDriver {
 
     private func detectImpulse(
         value:     Double,
+        threshold: Double,
         isAbove:   inout Bool,
         readyAt:   inout TimeInterval,
         now:       TimeInterval,
         onImpulse: (Int) -> Void
     ) {
         let magnitude = abs(value)
-        if magnitude > impulseThreshold {
+        if magnitude > threshold {
             if !isAbove && now >= readyAt {
                 isAbove = true
                 readyAt = now + impulseDeadTime
