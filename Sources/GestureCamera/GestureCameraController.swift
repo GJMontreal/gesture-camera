@@ -22,6 +22,9 @@ public final class GestureCameraController: ObservableObject {
     /// Higher = more dampening, more lag.
     public var attitudeSmoothingTime: Float = 0.04
 
+    /// Inverts both yaw and pitch axes for touch rotation gestures.
+    @Published public var invertTouchGestures: Bool = false
+
     // MARK: - Private state
 
     private let motionDriver: MotionCameraDriver
@@ -126,8 +129,9 @@ public final class GestureCameraController: ObservableObject {
     /// Rotate the camera via a drag gesture (yaw and pitch only, never roll).
     /// Call from a UIPanGestureRecognizer with deltas zeroed each frame.
     public func applyRotationGesture(dx: Float, dy: Float, sensitivity: Float = 0.005) {
-        cameraYaw   -= dx * sensitivity
-        cameraPitch += dy * sensitivity
+        let sign: Float = invertTouchGestures ? -1 : 1
+        cameraYaw   -= dx * sensitivity * sign
+        cameraPitch += dy * sensitivity * sign
         cameraPitch  = cameraPitch.clamped(to: -.pi/2 + 0.05 ... .pi/2 - 0.05)
     }
 
